@@ -51,7 +51,7 @@ public interface SpecialPriceRepository {
     Optional<SpecialPrice> findFirstActiveNotAssignedForUpdate(@Bind("ticketCategoryId") int ticketCategoryId);
 
     @Query("update special_price set session_id = :sessionId, access_code_id_fk = :accessCodeId where id in (" +
-        "select id from special_price where ticket_category_id = :ticketCategoryId and " +IS_FREE+ " and access_code_id_fk is null limit :limitTo" +
+        "select id from special_price where ticket_category_id = :ticketCategoryId and " +IS_FREE+ " and access_code_id_fk is null limit :limitTo for update skip locked" +
         ")")
     int bindToSession(@Bind("sessionId") String sessionIdentifier, @Bind("ticketCategoryId") int ticketCategoryId, @Bind("accessCodeId") Integer accessCodeId, @Bind("limitTo") int limitTo);
 
