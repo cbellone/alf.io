@@ -25,6 +25,7 @@ import alfio.model.Event;
 import alfio.model.EventAndOrganizationId;
 import alfio.model.PaymentInformation;
 import alfio.model.system.ConfigurationKeys;
+import alfio.model.system.ConfigurationPathLevel;
 import alfio.model.transaction.PaymentContext;
 import alfio.model.transaction.PaymentMethod;
 import alfio.model.transaction.PaymentProxy;
@@ -45,10 +46,8 @@ import lombok.extern.log4j.Log4j2;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Predicate;
 
 import static alfio.model.system.ConfigurationKeys.*;
 
@@ -272,9 +271,16 @@ class BaseStripeManager {
         }
     }
 
-    boolean accept(PaymentMethod paymentMethod, PaymentContext context) {
+    boolean accept(PaymentMethod paymentMethod, PaymentContext context,
+                   EnumSet<ConfigurationKeys> additionalKeys,
+                   Predicate<Map<ConfigurationKeys, ConfigurationManager.MaybeConfiguration>> subValidator) {
+        var optionsToLoad = EnumSet.copyOf(additionalKeys);
+        optionsToLoad.addAll(EnumSet.of(STRIPE_CC_ENABLED, PLATFORM_MODE_ENABLED, STRIPE_CONNECTED_ID));
+        var configuration = configurationManager.getFor(optionsToLoad, context.getConfigurationLevel());
         return paymentMethod == PaymentMethod.CREDIT_CARD
-            && configurationManager.getFor(STRIPE_CC_ENABLED, context.getConfigurationLevel()).getValueAsBooleanOrDefault(false);
+            && configuration.get(STRIPE_CC_ENABLED).getValueAsBooleanOrDefault(false)
+            && (!configuration.get(PLATFORM_MODE_ENABLED).getValueAsBooleanOrDefault(false) || context.getConfigurationLevel().getPathLevel() == ConfigurationPathLevel.SYSTEM || configuration.get(STRIPE_CONNECTED_ID).isPresent())
+            && subValidator.test(configuration);
     }
 
     String handleException(StripeException exc) {

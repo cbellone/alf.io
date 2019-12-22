@@ -194,7 +194,7 @@ public class EventApiV2Controller {
                 //
 
                 //
-                boolean forceAssignment = configurationsValues.get(FORCE_TICKET_OWNER_ASSIGNMENT_AT_RESERVATION).getValueAsBooleanOrDefault(true);
+                boolean forceAssignment = configurationsValues.get(FORCE_TICKET_OWNER_ASSIGNMENT_AT_RESERVATION).getValueAsBooleanOrDefault(false);
                 boolean enableAttendeeAutocomplete = configurationsValues.get(ENABLE_ATTENDEE_AUTOCOMPLETE).getValueAsBooleanOrDefault(true);
                 boolean enableTicketTransfer = configurationsValues.get(ENABLE_TICKET_TRANSFER).getValueAsBooleanOrDefault(true);
                 var assignmentConf = new EventWithAdditionalInfo.AssignmentConfiguration(forceAssignment, enableAttendeeAutocomplete, enableTicketTransfer);
@@ -510,7 +510,7 @@ public class EventApiV2Controller {
         };
 
         var url = promoCodeRequestManager.createReservationFromPromoCode(eventName, trimmedCode, queryStrings::put, handleErrors, request).map(reservationId ->
-            UriComponentsBuilder.fromPath("/event/{eventShortName}/reservation/{reservationId}")
+            UriComponentsBuilder.fromPath("/event/{eventShortName}/reservation/{reservationId}/book")
                 .build(Map.of("eventShortName", eventName, "reservationId", reservationId))
                 .toString())
             .orElseGet(() -> {
