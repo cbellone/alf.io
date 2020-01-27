@@ -18,8 +18,13 @@ package alfio.controller.payment;
 
 import alfio.manager.TicketReservationManager;
 import alfio.manager.payment.PayPalManager;
+import alfio.manager.payment.PaymentSpecification;
+import alfio.manager.support.PaymentResult;
+import alfio.model.CustomerName;
 import alfio.model.Event;
 import alfio.model.TicketReservation;
+import alfio.model.transaction.PaymentMethod;
+import alfio.model.transaction.PaymentProxy;
 import alfio.model.transaction.token.PayPalToken;
 import alfio.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +34,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
@@ -47,7 +53,9 @@ public class PayPalCallbackController {
                                 @PathVariable("reservationId") String reservationId,
                                 @RequestParam(value = "token", required = false) String payPalPaymentId,
                                 @RequestParam(value = "PayerID", required = false) String payPalPayerID,
-                                @RequestParam(value = "hmac") String hmac) {
+                                @RequestParam(value = "hmac") String hmac,
+                                @RequestParam(value = "tc") boolean termsAndConditionsAccepted,
+                                @RequestParam(value = "pp") boolean privacyPolicyAccepted) {
 
         Optional<Event> optionalEvent = eventRepository.findOptionalByShortName(eventName);
         if(optionalEvent.isEmpty()) {
@@ -65,7 +73,19 @@ public class PayPalCallbackController {
 
         if (isNotBlank(payPalPayerID) && isNotBlank(payPalPaymentId)) {
             var token = new PayPalToken(payPalPayerID, payPalPaymentId, hmac);
-            payPalManager.saveToken(res.getId(), ev, token);
+            var reservationCost = ticketReservationManager.totalReservationCostWithVAT(res);
+            var customerName = new CustomerName(res.getFullName(), res.getFirstName(), res.getLastName(), ev.mustUseFirstAndLastName());
+            var orderSummary = ticketReservationManager.orderSummaryForReservation(res, ev);
+            PaymentSpecification spec = new PaymentSpecification(reservationId, token, reservationCost.getPriceWithVAT(),
+                ev, res.getEmail(), customerName, res.getBillingAddress(), res.getCustomerReference(),
+                Locale.forLanguageTag(res.getUserLanguage()), res.isInvoiceRequested(), !res.isDirectAssignmentRequested(),
+                orderSummary, res.getVatCountryCode(), res.getVatNr(), res.getVatStatus(),
+                termsAndConditionsAccepted, privacyPolicyAccepted);
+
+            final PaymentResult status = ticketReservationManager.performPayment(spec, reservationCost, PaymentProxy.PAYPAL, PaymentMethod.PAYPAL);
+            if(status.isSuccessful()) {
+                return "redirect:/event/" + ev.getShortName() + "/reservation/" +res.getId() + "/success";
+            }
             return "redirect:/event/" + ev.getShortName() + "/reservation/" +res.getId() + "/overview";
         } else {
             return payPalCancel(ev.getShortName(), res.getId(), payPalPaymentId, hmac);
@@ -87,7 +107,6 @@ public class PayPalCallbackController {
         if(optionalReservation.isEmpty()) {
             return "redirect:/event/" + eventName;
         }
-
         payPalManager.removeToken(optionalReservation.get(), payPalPaymentId);
         return "redirect:/event/"+eventName+"/reservation/"+reservationId+"/overview";
     }

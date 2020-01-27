@@ -22,7 +22,10 @@ import alfio.manager.support.FeeCalculator;
 import alfio.manager.support.PaymentResult;
 import alfio.manager.system.ConfigurationLevel;
 import alfio.manager.system.ConfigurationManager;
-import alfio.model.*;
+import alfio.model.Event;
+import alfio.model.EventAndOrganizationId;
+import alfio.model.PaymentInformation;
+import alfio.model.TicketReservation;
 import alfio.model.system.ConfigurationKeys;
 import alfio.model.transaction.PaymentMethod;
 import alfio.model.transaction.*;
@@ -64,6 +67,7 @@ import java.util.stream.Collectors;
 import static alfio.model.system.ConfigurationKeys.PAYPAL_ENABLED;
 import static alfio.util.MonetaryUtil.*;
 import static org.apache.commons.collections4.CollectionUtils.emptyIfNull;
+import static org.apache.commons.lang3.StringUtils.trimToEmpty;
 
 @Component
 @Log4j2
@@ -101,14 +105,16 @@ public class PayPalManager implements PaymentProvider, RefundRequest, PaymentInf
         String bookUrl = baseUrl+"/event/" + eventName + "/reservation/" + spec.getReservationId() + "/payment/paypal/" + URL_PLACEHOLDER;
 
         UriComponentsBuilder bookUrlBuilder = UriComponentsBuilder.fromUriString(bookUrl)
-            .queryParam("hmac", computeHMAC(spec.getCustomerName(), spec.getEmail(), spec.getBillingAddress(), spec.getEvent()));
+            .queryParam("hmac", computeHMAC(spec))
+            .queryParam("tc", spec.isTcAccepted())
+            .queryParam("pp", spec.isPrivacyAccepted());
         String finalUrl = bookUrlBuilder.toUriString();
 
         ApplicationContext applicationContext = new ApplicationContext()
             .landingPage("BILLING")
             .cancelUrl(finalUrl.replace(URL_PLACEHOLDER, "cancel"))
             .returnUrl(finalUrl.replace(URL_PLACEHOLDER, "confirm"))
-            .userAction("CONTINUE")
+            .userAction("PAY_NOW")
             .shippingPreference("NO_SHIPPING");
 
         OrderRequest orderRequest = new OrderRequest()
@@ -133,12 +139,14 @@ public class PayPalManager implements PaymentProvider, RefundRequest, PaymentInf
         throw new IllegalStateException();
     }
 
-    private static String computeHMAC(CustomerName customerName, String email, String billingAddress, Event event) {
-        return new HmacUtils(HmacAlgorithms.HMAC_SHA_256, event.getPrivateKey()).hmacHex(StringUtils.trimToEmpty(customerName.getFullName()) + StringUtils.trimToEmpty(email) + StringUtils.trimToEmpty(billingAddress));
+    private static String computeHMAC(PaymentSpecification paymentSpecification) {
+        return new HmacUtils(HmacAlgorithms.HMAC_SHA_256, paymentSpecification.getEvent().getPrivateKey())
+            .hmacHex(trimToEmpty(paymentSpecification.getCustomerName().getFullName()) + trimToEmpty(paymentSpecification.getEmail())
+                + trimToEmpty(paymentSpecification.getBillingAddress()) + paymentSpecification.isTcAccepted() + paymentSpecification.isPrivacyAccepted());
     }
 
-    private static boolean isValidHMAC(CustomerName customerName, String email, String billingAddress, String hmac, Event event) {
-        String computedHmac = computeHMAC(customerName, email, billingAddress, event);
+    private static boolean isValidHMAC(String hmac, PaymentSpecification paymentSpecification) {
+        String computedHmac = computeHMAC(paymentSpecification);
         return MessageDigest.isEqual(hmac.getBytes(StandardCharsets.UTF_8), computedHmac.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -324,7 +332,7 @@ public class PayPalManager implements PaymentProvider, RefundRequest, PaymentInf
     public PaymentResult doPayment(PaymentSpecification spec) {
         try {
             PayPalToken gatewayToken = (PayPalToken) spec.getGatewayToken();
-            if(!isValidHMAC(spec.getCustomerName(), spec.getEmail(), spec.getBillingAddress(), gatewayToken.getHmac(), spec.getEvent())) {
+            if(!isValidHMAC(gatewayToken.getHmac(), spec)) {
                 return PaymentResult.failed(ErrorsCode.STEP_2_INVALID_HMAC);
             }
             var chargeDetails = commitPayment(spec.getReservationId(), gatewayToken, spec.getEvent());
