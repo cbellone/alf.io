@@ -21,6 +21,7 @@ import lombok.extern.log4j.Log4j2;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.Profiles;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,5 +51,9 @@ public class SpringBootLauncher {
         ConfigurableApplicationContext applicationContext = application.run(args);
         ConfigurableEnvironment environment = applicationContext.getEnvironment();
         log.info("profiles: requested {}, active {}", profiles, String.join(", ", (CharSequence[]) environment.getActiveProfiles()));
+        if(environment.acceptsProfiles(Profiles.of("dry-run"))) {
+            log.info("dry run detected. Shutting down...");
+            System.exit(0);
+        }
     }
 }

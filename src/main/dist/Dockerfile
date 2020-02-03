@@ -3,10 +3,11 @@
 # Thanks to:
 # - https://mjg123.github.io/2018/11/05/alpine-jdk11-images.html
 # - https://august.nagro.us/small-java.html
+# - https://blog.codefx.org/java/application-class-data-sharing/
 #
 
-FROM azul/zulu-openjdk-alpine:11.0.5 as zulu
-
+FROM azul/zulu-openjdk-alpine:13.0.1 as zulu
+RUN apk add --update binutils
 RUN $JAVA_HOME/bin/jlink --compress=1 --strip-debug --no-header-files --no-man-pages \
     --module-path $JAVA_HOME/jmods \
     # see https://github.com/ben-manes/caffeine/issues/273
@@ -14,6 +15,11 @@ RUN $JAVA_HOME/bin/jlink --compress=1 --strip-debug --no-header-files --no-man-p
     --add-modules jdk.scripting.nashorn,java.desktop,java.logging,java.sql,java.management,java.naming,jdk.unsupported,jdk.crypto.ec,java.net.http,jdk.localedata \
     --include-locales en,it,es,nl,fr,de,ro,pt,tr,pl,da,bg \
     --output /jlinked
+COPY WEB-INF WEB-INF
+COPY alf.io-*.jar .
+
+RUN $JAVA_HOME/bin/java -Dspring.profiles.active=dry-run,disable-jobs -XX:ArchiveClassesAtExit=alfio-classes.jsa --add-modules jdk.scripting.nashorn \
+    -cp ./alf.io-main.jar:./alf.io-resources.jar:./WEB-INF/lib/*:./WEB-INF/lib-provided/* alfio.config.SpringBootLauncher
 
 FROM alpine:3.10.3
 
@@ -28,19 +34,19 @@ RUN apk add --update ttf-dejavu && rm -rf /var/cache/apk/*
 USER 1001
 
 # Define working directory.
-RUN mkdir /home/alfio/app
+RUN mkdir -p /home/alfio/app/logs /home/alfio/app/WEB-INF
 WORKDIR /home/alfio/app
-
-RUN mkdir logs
-COPY --chown=alfio WEB-INF WEB-INF
-COPY --chown=alfio resources resources
+COPY --chown=alfio --from=zulu /alfio-classes.jsa alfio-classes.jsa
+COPY --chown=alfio WEB-INF/lib WEB-INF/lib
+COPY --chown=alfio WEB-INF/lib-provided WEB-INF/lib-provided
+COPY --chown=alfio alf.io-*.jar .
 
 ENV ALFIO_LOG_STDOUT_ONLY=true
 ENV ALFIO_JAVA_OPTS=""
 ENV ALFIO_PERFORMANCE_OPTS="-Dspring.jmx.enabled=false -Dlog4j2.disableJmx=true"
 
-CMD /opt/jdk/bin/java $ALFIO_JAVA_OPTS $ALFIO_PERFORMANCE_OPTS -XX:+UseContainerSupport \
+CMD /opt/jdk/bin/java $ALFIO_JAVA_OPTS $ALFIO_PERFORMANCE_OPTS -XX:+UseContainerSupport -XX:SharedArchiveFile=alfio-classes.jsa \
     --add-modules jdk.scripting.nashorn \
-    -cp ./WEB-INF/classes:./resources:./WEB-INF/lib/*:./WEB-INF/lib-provided/* alfio.config.SpringBootLauncher
+    -cp ./alf.io-main.jar:./alf.io-resources.jar:./WEB-INF/lib/*:./WEB-INF/lib-provided/* alfio.config.SpringBootLauncher
 
 EXPOSE 8080

@@ -16,7 +16,6 @@
  */
 package alfio.job;
 
-import alfio.config.Initializer;
 import alfio.manager.*;
 import alfio.manager.system.AdminJobExecutor;
 import alfio.manager.system.AdminJobManager;
@@ -24,10 +23,7 @@ import lombok.AllArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.lang3.time.DateUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.springframework.context.annotation.DependsOn;
-import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 
 import java.util.Date;
 import java.util.Map;
@@ -38,9 +34,6 @@ import java.util.Map;
  * <p>Note: it's a separate package, as we need to ensure that the called method are public (and possibly @Transactional!)</p>
  *
  */
-@Component
-@DependsOn("migrator")
-@Profile("!" + Initializer.PROFILE_DISABLE_JOBS)
 @AllArgsConstructor
 @Log4j2
 public class Jobs {

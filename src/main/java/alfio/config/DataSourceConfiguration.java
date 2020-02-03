@@ -16,6 +16,7 @@
  */
 package alfio.config;
 
+import alfio.config.support.ApplicationInfo;
 import alfio.config.support.ArrayColumnMapper;
 import alfio.config.support.JSONColumnMapper;
 import alfio.config.support.PlatformProvider;
@@ -42,8 +43,13 @@ import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.log4j.Log4j2;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
-import org.springframework.context.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.EmptySqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -88,7 +94,7 @@ public class DataSourceConfiguration {
     @Bean
     @Profile({"!"+Initializer.PROFILE_INTEGRATION_TEST, "travis"})
     public DataSource getDataSource(Environment env, PlatformProvider platform) {
-        if(platform == PlatformProvider.CLOUD_FOUNDRY) {
+        if(platform == PlatformProvider.CLOUD_FOUNDRY || env.acceptsProfiles(Profiles.of("dry-run"))) {
             return new FakeCFDataSource();
         } else {
             HikariDataSource dataSource = new HikariDataSource();
@@ -139,6 +145,7 @@ public class DataSourceConfiguration {
     }
 
     @Bean
+    @Profile("!dry-run")
     public Flyway migrator(DataSource dataSource) {
         var configuration = Flyway.configure();
         var jdbcTemplate = new JdbcTemplate(dataSource);
@@ -153,6 +160,18 @@ public class DataSourceConfiguration {
         Flyway migration = new Flyway(configuration);
         migration.migrate();
         return migration;
+    }
+
+    @Bean
+    @Profile("!dry-run")
+    public ApplicationInfo versionInfo(Flyway flyway, @Value("${alfio.version}") String version) {
+        return new ApplicationInfo(version, flyway.info().current().getVersion().getVersion(), false);
+    }
+
+    @Bean
+    @Profile("dry-run")
+    public ApplicationInfo versionInfoDryRun(@Value("${alfio.version}") String version) {
+        return new ApplicationInfo(version, version, true);
     }
     
     @Bean
@@ -202,7 +221,6 @@ public class DataSourceConfiguration {
     }
 
     @Bean
-    @DependsOn("migrator")
     @Profile("!" + Initializer.PROFILE_DISABLE_JOBS)
     public Jobs jobs(AdminReservationRequestManager adminReservationRequestManager,
                      FileUploadManager fileUploadManager,
@@ -211,7 +229,8 @@ public class DataSourceConfiguration {
                      WaitingQueueSubscriptionProcessor waitingQueueSubscriptionProcessor,
                      TicketReservationManager ticketReservationManager,
                      AdminJobQueueRepository adminJobQueueRepository,
-                     PlatformTransactionManager platformTransactionManager
+                     PlatformTransactionManager platformTransactionManager,
+                     Flyway migrator //force dependency
                      ) {
         return new Jobs(adminReservationRequestManager, fileUploadManager,
             notificationManager, specialPriceTokenGenerator, ticketReservationManager,
@@ -220,6 +239,7 @@ public class DataSourceConfiguration {
     }
 
     @Bean
+    @Profile("!"+Initializer.PROFILE_DISABLE_JOBS)
     AdminJobManager adminJobManager(AdminJobQueueRepository adminJobQueueRepository,
                                     PlatformTransactionManager transactionManager,
                                     TicketReservationManager ticketReservationManager) {

@@ -17,6 +17,7 @@
 package alfio.manager;
 
 import alfio.config.Initializer;
+import alfio.config.support.ApplicationInfo;
 import alfio.manager.support.CategoryEvaluator;
 import alfio.manager.system.ConfigurationLevel;
 import alfio.manager.system.ConfigurationManager;
@@ -49,7 +50,6 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Triple;
-import org.flywaydb.core.Flyway;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -102,7 +102,7 @@ public class EventManager {
     private final EventDeleterRepository eventDeleterRepository;
     private final AdditionalServiceRepository additionalServiceRepository;
     private final AdditionalServiceTextRepository additionalServiceTextRepository;
-    private final Flyway flyway;
+    private final ApplicationInfo applicationInfo;
     private final Environment environment;
     private final OrganizationRepository organizationRepository;
     private final AuditingRepository auditingRepository;
@@ -815,7 +815,7 @@ public class EventManager {
         BigDecimal vat = !em.isInternal() || em.isFreeOfCharge() ? BigDecimal.ZERO : em.getVatPercentage();
         String privateKey = UUID.randomUUID().toString();
         ZoneId zoneId = ZoneId.of(em.getZoneId());
-        String currentVersion = flyway.info().current().getVersion().getVersion();
+        String currentVersion = applicationInfo.getModelVersion();
         return eventRepository.insert(em.getShortName(), em.getEventType(), em.getDisplayName(), em.getWebsiteUrl(), em.getExternalUrl(), em.isInternal() ? em.getTermsAndConditionsUrl() : "",
             em.getPrivacyPolicyUrl(), em.getImageUrl(), em.getFileBlobId(), em.getLocation(), em.getLatitude(), em.getLongitude(), em.getBegin().toZonedDateTime(zoneId),
             em.getEnd().toZonedDateTime(zoneId), em.getZoneId(), em.getCurrency(), em.getAvailableSeats(), em.isInternal() && em.isVatIncluded(),

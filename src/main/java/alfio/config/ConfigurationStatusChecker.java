@@ -16,6 +16,7 @@
  */
 package alfio.config;
 
+import alfio.config.support.ApplicationInfo;
 import alfio.manager.system.ConfigurationManager;
 import alfio.manager.system.DataMigrator;
 import alfio.manager.user.UserManager;
@@ -46,6 +47,7 @@ public class ConfigurationStatusChecker implements ApplicationListener<ContextRe
     private final PasswordEncoder passwordEncoder;
     private final String version;
     private final DataMigrator dataMigrator;
+    private final ApplicationInfo applicationInfo;
 
     @Autowired
     public ConfigurationStatusChecker(ConfigurationManager configurationManager,
@@ -53,17 +55,23 @@ public class ConfigurationStatusChecker implements ApplicationListener<ContextRe
                                       AuthorityRepository authorityRepository,
                                       PasswordEncoder passwordEncoder,
                                       @Value("${alfio.version}") String version,
-                                      DataMigrator dataMigrator) {
+                                      DataMigrator dataMigrator,
+                                      ApplicationInfo applicationInfo) {
         this.configurationManager = configurationManager;
         this.authorityRepository = authorityRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.version = version;
         this.dataMigrator = dataMigrator;
+        this.applicationInfo = applicationInfo;
     }
 
     @Override
     public void onApplicationEvent(ContextRefreshedEvent contextRefreshedEvent) {
+        if(applicationInfo.isDryRun()) {
+            log.info("Dry run detected, skipping configuration status check");
+            return;
+        }
         boolean initCompleted = configurationManager.getForSystem(ConfigurationKeys.INIT_COMPLETED).getValueAsBooleanOrDefault(false);
         if (!initCompleted) {
             String adminPassword = PasswordGenerator.generateRandomPassword();

@@ -183,6 +183,7 @@ dependencies {
     compile "org.springframework.boot:spring-boot-starter-mail", {
         exclude module : 'spring-boot-starter-logging'
     }
+    compileOnly "org.springframework:spring-context-indexer"
 
     compile "org.springframework.boot:spring-boot@jar", {
         exclude module : 'spring-boot-starter-logging'
@@ -352,10 +353,28 @@ task dockerize(type: Copy) {
     filter(ReplaceTokens, tokens: [ALFIO_VERSION: project.version])
 }
 
-task distribution(type: Copy) {
+task explodeWar(type: Copy) {
     from zipTree("${project.buildDir}/libs/alfio-${project.version}-boot.war")
     into "${buildDir}/dockerize"
     dependsOn build, dockerize
+}
+
+task repackageClasses(type: Zip) {
+    archiveName("alf.io-main.jar")
+    destinationDir(file("${project.buildDir}/dockerize/"))
+    from fileTree("${project.buildDir}/dockerize/WEB-INF/classes/")
+    dependsOn explodeWar
+}
+
+task repackageResources(type: Zip) {
+    archiveName("alf.io-resources.jar")
+    destinationDir(file("${project.buildDir}/dockerize/"))
+    from fileTree("${project.buildDir}/dockerize/resources/")
+    dependsOn explodeWar
+}
+
+task distribution() {
+    dependsOn repackageClasses, repackageResources
 }
 
 task clever(type: Copy) {

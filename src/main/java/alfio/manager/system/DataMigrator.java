@@ -16,6 +16,7 @@
  */
 package alfio.manager.system;
 
+import alfio.config.support.ApplicationInfo;
 import alfio.manager.TicketReservationManager;
 import alfio.model.*;
 import alfio.model.system.ConfigurationKeys;
@@ -73,6 +74,7 @@ public class DataMigrator {
     private final NamedParameterJdbcTemplate jdbc;
     private final TicketReservationManager ticketReservationManager;
     private final TicketSearchRepository ticketSearchRepository;
+    private final ApplicationInfo applicationInfo;
 
     static {
         PRICE_UPDATE_BY_KEY.put("event", "update event set src_price_cts = :srcPriceCts, vat_status = :vatStatus where id = :eventId");
@@ -92,7 +94,8 @@ public class DataMigrator {
                         ConfigurationRepository configurationRepository,
                         NamedParameterJdbcTemplate jdbc,
                         TicketReservationManager ticketReservationManager,
-                        TicketSearchRepository ticketSearchRepository) {
+                        TicketSearchRepository ticketSearchRepository,
+                        ApplicationInfo applicationInfo) {
         this.eventMigrationRepository = eventMigrationRepository;
         this.eventRepository = eventRepository;
         this.ticketCategoryRepository = ticketCategoryRepository;
@@ -104,15 +107,18 @@ public class DataMigrator {
         this.transactionTemplate = new TransactionTemplate(transactionManager, new DefaultTransactionDefinition(TransactionDefinition.PROPAGATION_REQUIRES_NEW));
         this.ticketReservationManager = ticketReservationManager;
         this.ticketSearchRepository = ticketSearchRepository;
+        this.applicationInfo = applicationInfo;
     }
 
     public void migrateEventsToCurrentVersion() {
-        List<Event> events = eventRepository.findAll();
-        events.forEach(this::migrateEventToCurrentVersion);
-        fillReservationsLanguage();
-        fillDefaultOptions();
-        fixReservationPrice(events);
-        fixVatStatus();
+        if(!applicationInfo.isDryRun()) {
+            List<Event> events = eventRepository.findAll();
+            events.forEach(this::migrateEventToCurrentVersion);
+            fillReservationsLanguage();
+            fillDefaultOptions();
+            fixReservationPrice(events);
+            fixVatStatus();
+        }
     }
 
     private void fixVatStatus() {
