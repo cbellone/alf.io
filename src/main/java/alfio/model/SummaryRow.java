@@ -30,10 +30,14 @@ public class SummaryRow {
     private final SummaryType type;
 
     public enum SummaryType {
-        TICKET, PROMOTION_CODE, ADDITIONAL_SERVICE
+        TICKET, PROMOTION_CODE, DYNAMIC_DISCOUNT, ADDITIONAL_SERVICE
     }
 
     public String getDescriptionForPayment() {
         return amount + " x " + name;
+    }
+
+    public boolean isDiscount() {
+        return type == SummaryType.PROMOTION_CODE || type == SummaryType.DYNAMIC_DISCOUNT;
     }
 }

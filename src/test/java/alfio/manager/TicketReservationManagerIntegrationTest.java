@@ -54,6 +54,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static alfio.model.system.ConfigurationKeys.AUTOMATIC_REMOVAL_EXPIRED_OFFLINE_PAYMENT;
+import static alfio.model.system.ConfigurationKeys.DEFERRED_BANK_TRANSFER_ENABLED;
 import static alfio.test.util.IntegrationTestUtil.AVAILABLE_SEATS;
 import static alfio.test.util.IntegrationTestUtil.initEvent;
 import static org.junit.Assert.*;
@@ -174,7 +175,9 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
         assertEquals(1, tickets.size());
         assertTrue(tickets.stream().allMatch(t -> t.getCategoryId() == null));
 
-        TotalPrice totalPrice = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice totalPrice = priceAndDiscount.getLeft();
+        assertTrue(priceAndDiscount.getRight().isEmpty());
 
 
         assertEquals(0, ticketReservationManager.getPendingPayments(event.getShortName()).size());
@@ -228,6 +231,65 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
     }
 
     @Test
+    public void deferredOfflinePayment() {
+        // enable deferred payment
+        configurationRepository.insert(DEFERRED_BANK_TRANSFER_ENABLED.name(), "true", "");
+
+        List<TicketCategoryModification> categories = List.of(
+            new TicketCategoryModification(null, "default", AVAILABLE_SEATS,
+                new DateTimeModification(LocalDate.now(), LocalTime.now()),
+                new DateTimeModification(LocalDate.now(), LocalTime.now()),
+                DESCRIPTION, BigDecimal.TEN, false, "", false, null, null, null, null, null, 0, null, null));
+        Pair<Event, String> eventAndUsername = initEvent(categories, organizationRepository, userManager, eventManager, eventRepository);
+        Event event = eventAndUsername.getKey();
+
+        TicketCategory unbounded = ticketCategoryRepository.findAllTicketCategories(event.getId()).get(0);
+
+
+        TicketReservationModification trForDeferred = new TicketReservationModification();
+        trForDeferred.setAmount(1);
+        trForDeferred.setTicketCategoryId(unbounded.getId());
+        TicketReservationWithOptionalCodeModification modForDeferred = new TicketReservationWithOptionalCodeModification(trForDeferred, Optional.empty());
+        String reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(modForDeferred), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.empty(), Locale.ENGLISH, false);
+
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice totalPrice = priceAndDiscount.getLeft();
+        assertTrue(priceAndDiscount.getRight().isEmpty());
+
+        PaymentSpecification specificationDeferred = new PaymentSpecification(reservationId, null, totalPrice.getPriceWithVAT(),
+            event, "email@example.com", new CustomerName("full name", "full", "name", event.mustUseFirstAndLastName()),
+            "billing address", null, Locale.ENGLISH, true, false, null, "IT", "123456", PriceContainer.VatStatus.INCLUDED, true, false);
+
+        PaymentResult confirm = ticketReservationManager.performPayment(specificationDeferred, totalPrice, PaymentProxy.OFFLINE, PaymentMethod.BANK_TRANSFER);
+        assertTrue(confirm.isSuccessful());
+
+        var status = ticketReservationRepository.findOptionalStatusAndValidationById(reservationId).orElseThrow().getStatus();
+        assertEquals(TicketReservation.TicketReservationStatus.DEFERRED_OFFLINE_PAYMENT, status);
+
+        // confirm deferred payment
+        ticketReservationManager.confirmOfflinePayment(event, reservationId, null);
+
+        reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(modForDeferred), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.empty(), Locale.ENGLISH, false);
+
+        specificationDeferred = new PaymentSpecification(reservationId, null, totalPrice.getPriceWithVAT(),
+            event, "email@example.com", new CustomerName("full name", "full", "name", event.mustUseFirstAndLastName()),
+            "billing address", null, Locale.ENGLISH, true, false, null, "IT", "123456", PriceContainer.VatStatus.INCLUDED, true, false);
+
+        confirm = ticketReservationManager.performPayment(specificationDeferred, totalPrice, PaymentProxy.OFFLINE, PaymentMethod.BANK_TRANSFER);
+        assertTrue(confirm.isSuccessful());
+
+        try {
+            ticketReservationManager.deleteOfflinePayment(event, reservationId, false, true, null);
+            fail("Credit should not be enabled for deferred payments");
+        } catch (IllegalArgumentException ex) {
+            // do nothing, because this is the expected behavior
+        }
+
+        ticketReservationManager.deleteOfflinePayment(event, reservationId, false, false, null);
+        Assert.assertFalse(ticketReservationManager.findById(reservationId).isPresent());
+    }
+
+    @Test
     public void testTicketWithDiscount() {
         List<TicketCategoryModification> categories = Collections.singletonList(
             new TicketCategoryModification(null, "default", AVAILABLE_SEATS,
@@ -251,7 +313,10 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         String reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(mod), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.of("MYPROMOCODE"), Locale.ENGLISH, false);
 
-        TotalPrice totalPrice = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice totalPrice = priceAndDiscount.getLeft();
+        assertFalse(priceAndDiscount.getRight().isEmpty());
+        assertEquals("MYPROMOCODE", priceAndDiscount.getRight().get().getPromoCode());
 
         // 3 * 10 chf is the normal price, 10% discount -> 300 discount
         Assert.assertEquals(2700, totalPrice.getPriceWithVAT());
@@ -272,7 +337,10 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         String reservationIdFixed = ticketReservationManager.createTicketReservation(event, Collections.singletonList(modFixed), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.of("MYFIXEDPROMO"), Locale.ENGLISH, false);
 
-        TotalPrice totalPriceFixed = ticketReservationManager.totalReservationCostWithVAT(reservationIdFixed);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscountFixed = ticketReservationManager.totalReservationCostWithVAT(reservationIdFixed);
+        TotalPrice totalPriceFixed = priceAndDiscountFixed.getLeft();
+        assertFalse(priceAndDiscountFixed.getRight().isEmpty());
+        assertEquals("MYFIXEDPROMO", priceAndDiscountFixed.getRight().get().getPromoCode());
 
         // 3 * 10 chf is the normal price, 3 * 5 is the discount
         Assert.assertEquals(2985, totalPriceFixed.getPriceWithVAT());
@@ -334,7 +402,10 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         String reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(mod), additionalServices, DateUtils.addDays(new Date(), 1), Optional.of("MYPROMOCODE"), Locale.ENGLISH, false);
 
-        TotalPrice totalPrice = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice totalPrice = priceAndDiscount.getLeft();
+        assertFalse(priceAndDiscount.getRight().isEmpty());
+        assertEquals("MYPROMOCODE", priceAndDiscount.getRight().get().getPromoCode());
 
         // totalPrice is (ticketPrice * 3) + (asPrice) + (donationPrice) - (discount * 4)
 
@@ -370,7 +441,11 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         String reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(mod), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.of(accessCode), Locale.ENGLISH, false);
 
-        TotalPrice totalPrice = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice totalPrice = priceAndDiscount.getLeft();
+        assertFalse(priceAndDiscount.getRight().isEmpty());
+        assertEquals(ACCESS_CODE, priceAndDiscount.getRight().get().getPromoCode());
+
 
         // 3 * 10 chf is the normal price, 10% discount -> 300 discount
         Assert.assertEquals(3000, totalPrice.getPriceWithVAT());
@@ -444,7 +519,9 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         String reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(mod), Collections.singletonList(asMod), DateUtils.addDays(new Date(), 1), Optional.of("MYPROMOCODE"), Locale.ENGLISH, false);
 
-        TotalPrice totalPrice = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice totalPrice = priceAndDiscount.getLeft();
+        assertTrue(priceAndDiscount.getRight().isEmpty());
 
         Assert.assertEquals(4000, totalPrice.getPriceWithVAT());//3 tickets + 1 AS
         Assert.assertEquals(40, totalPrice.getVAT());
@@ -498,7 +575,9 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         TicketReservationWithOptionalCodeModification mod = new TicketReservationWithOptionalCodeModification(tr, Optional.empty());
         String reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(mod), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.empty(), Locale.ENGLISH, false);
-        TotalPrice reservationCost = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice reservationCost = priceAndDiscount.getLeft();
+        assertTrue(priceAndDiscount.getRight().isEmpty());
         PaymentSpecification specification = new PaymentSpecification(reservationId, null, reservationCost.getPriceWithVAT(),
             event, "email@example.com", new CustomerName("full name", "full", "name", event.mustUseFirstAndLastName()),
             "billing address", null, Locale.ENGLISH, true, false, null, "IT", "123456", PriceContainer.VatStatus.INCLUDED, true, false);
@@ -509,7 +588,9 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         mod = new TicketReservationWithOptionalCodeModification(tr, Optional.empty());
         reservationId = ticketReservationManager.createTicketReservation(event, Collections.singletonList(mod), Collections.emptyList(), DateUtils.addDays(new Date(), 1), Optional.empty(), Locale.ENGLISH, false);
-        reservationCost = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        reservationCost = priceAndDiscount.getLeft();
+        assertTrue(priceAndDiscount.getRight().isEmpty());
         PaymentSpecification specification2 = new PaymentSpecification(reservationId, null, reservationCost.getPriceWithVAT(),
             event, "email@example.com", new CustomerName("full name", "full", "name", event.mustUseFirstAndLastName()),
             "billing address", null, Locale.ENGLISH, true, false, null, "IT", "123456", PriceContainer.VatStatus.INCLUDED, true, false);
@@ -584,7 +665,9 @@ public class TicketReservationManagerIntegrationTest extends BaseIntegrationTest
 
         Assert.assertTrue(idsOfflinePayment.get().isEmpty());
 
-        TotalPrice reservationCost = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        Pair<TotalPrice, Optional<PromoCodeDiscount>> priceAndDiscount = ticketReservationManager.totalReservationCostWithVAT(reservationId);
+        TotalPrice reservationCost = priceAndDiscount.getLeft();
+        assertTrue(priceAndDiscount.getRight().isEmpty());
         PaymentSpecification specification = new PaymentSpecification(reservationId, null, reservationCost.getPriceWithVAT(),
             event, "email@example.com", new CustomerName("full name", "full", "name", event.mustUseFirstAndLastName()),
             "billing address", null, Locale.ENGLISH, true, false, null, "IT", "123456", PriceContainer.VatStatus.INCLUDED, true, false);

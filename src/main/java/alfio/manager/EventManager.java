@@ -875,7 +875,7 @@ public class EventManager {
         if(DiscountType.PERCENTAGE == discountType) {
             Validate.inclusiveBetween(0, 100, discountAmount, "percentage discount must be between 0 and 100");
         }
-        if(DiscountType.FIXED_AMOUNT == discountType) {
+        if(DiscountType.FIXED_AMOUNT == discountType || DiscountType.FIXED_AMOUNT_RESERVATION == discountType) {
             Validate.isTrue(discountAmount >= 0, "fixed discount amount cannot be less than zero");
         }
 
@@ -910,14 +910,14 @@ public class EventManager {
         promoCodeRepository.updateEventPromoCode(promoCodeId, start, end, maxUsage, categoriesJson, description, emailReference, hiddenCategoryId);
     }
     
-    public List<PromoCodeDiscountWithFormattedTime> findPromoCodesInEvent(int eventId) {
-        ZoneId zoneId = eventRepository.findById(eventId).getZoneId();
-        return promoCodeRepository.findAllInEvent(eventId).stream().map(p -> new PromoCodeDiscountWithFormattedTime(p, zoneId)).collect(toList());
+    public List<PromoCodeDiscountWithFormattedTimeAndAmount> findPromoCodesInEvent(int eventId) {
+        var event = eventRepository.findById(eventId);
+        return promoCodeRepository.findAllInEvent(eventId).stream().map(p -> new PromoCodeDiscountWithFormattedTimeAndAmount(p, event.getZoneId(), event.getCurrency())).collect(toList());
     }
 
-    public List<PromoCodeDiscountWithFormattedTime> findPromoCodesInOrganization(int organizationId) {
+    public List<PromoCodeDiscountWithFormattedTimeAndAmount> findPromoCodesInOrganization(int organizationId) {
         ZoneId zoneId = ZoneId.systemDefault();
-        return promoCodeRepository.findAllInOrganization(organizationId).stream().map(p -> new PromoCodeDiscountWithFormattedTime(p, zoneId)).collect(toList());
+        return promoCodeRepository.findAllInOrganization(organizationId).stream().map(p -> new PromoCodeDiscountWithFormattedTimeAndAmount(p, zoneId, null)).collect(toList());
     }
 
     public String getEventUrl(Event event) {

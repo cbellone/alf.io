@@ -76,7 +76,9 @@ public class ExternalConfiguration {
     }
 
     public Map<String, String> getParametersForExtension(String id) {
-        return extensions.stream().filter(ExtensionOverride::isValid).map(ExtensionOverride::getParams)
+        return extensions.stream().filter(ExtensionOverride::isValid)
+            .filter(extensionOverride -> extensionOverride.id.equals(id))
+            .map(ExtensionOverride::getParams)
             .findFirst()
             .orElse(Map.of());
     }
@@ -93,6 +95,10 @@ public class ExternalConfiguration {
             return isNotBlank(id)
                 && isNotBlank(file)
                 && events != null && !events.isEmpty();
+        }
+
+        Map<String, String> getParams() {
+            return Objects.requireNonNullElse(params, Map.of());
         }
     }
 
