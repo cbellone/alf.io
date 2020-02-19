@@ -97,7 +97,6 @@ public class DataMigrator {
                         TicketReservationManager ticketReservationManager,
                         TicketSearchRepository ticketSearchRepository,
                         ApplicationInfo applicationInfo,
-                        TicketSearchRepository ticketSearchRepository,
                         PromoCodeDiscountRepository promoCodeDiscountRepository,
                         AdditionalServiceItemRepository additionalServiceItemRepository,
                         AdditionalServiceRepository additionalServiceRepository) {
