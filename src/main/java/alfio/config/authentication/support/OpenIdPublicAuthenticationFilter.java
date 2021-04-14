@@ -14,9 +14,9 @@
  * You should have received a copy of the GNU General Public License
  * along with alf.io.  If not, see <http://www.gnu.org/licenses/>.
  */
-package alfio.config.support.auth;
+package alfio.config.authentication.support;
 
-import alfio.manager.system.OpenIdAuthenticationManager;
+import alfio.manager.openid.PublicOpenIdAuthenticationManager;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -30,13 +30,14 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-@Log4j2
-public class OpenIdAuthenticationFilter extends GenericFilterBean {
-    private final RequestMatcher requestMatcher;
-    private final OpenIdAuthenticationManager openIdAuthenticationManager;
 
-    public OpenIdAuthenticationFilter(String loginURL, OpenIdAuthenticationManager openIdAuthenticationManager) {
-        this.requestMatcher = new AntPathRequestMatcher(loginURL, "GET");
+@Log4j2
+public class OpenIdPublicAuthenticationFilter extends GenericFilterBean {
+    private final RequestMatcher requestMatcher;
+    private final PublicOpenIdAuthenticationManager openIdAuthenticationManager;
+
+    public OpenIdPublicAuthenticationFilter(PublicOpenIdAuthenticationManager openIdAuthenticationManager) {
+        this.requestMatcher = new AntPathRequestMatcher("/public/authentication", "GET");
         this.openIdAuthenticationManager = openIdAuthenticationManager;
     }
 
@@ -47,7 +48,7 @@ public class OpenIdAuthenticationFilter extends GenericFilterBean {
 
         if (requestMatcher.matches(req)) {
             if (SecurityContextHolder.getContext().getAuthentication() != null || req.getParameterMap().containsKey("logout")) {
-                res.sendRedirect("/admin/");
+                res.sendRedirect("/");
                 return;
             }
             log.trace("calling buildAuthorizeUrl");
