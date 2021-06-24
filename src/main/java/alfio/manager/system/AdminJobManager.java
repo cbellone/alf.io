@@ -37,6 +37,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static alfio.manager.system.AdminJobExecutor.JobName.PROCESS_ASYNC_EXTENSIONS;
 import static alfio.model.system.AdminJobSchedule.Status.EXECUTED;
 import static java.util.stream.Collectors.*;
 
@@ -68,10 +69,21 @@ public class AdminJobManager {
     }
 
     @Scheduled(fixedDelay = 60 * 1000)
-    void processPendingRequests() {
-        log.trace("Processing pending requests");
-        adminJobQueueRepository.loadPendingSchedules()
-            .stream()
+    void processLightweightJobs() {
+        log.trace("Processing pending lightweight requests");
+        processJobs(adminJobQueueRepository.loadPendingSchedules(EnumSet.complementOf(EnumSet.of(PROCESS_ASYNC_EXTENSIONS))));
+        log.trace("done processing pending lightweight requests");
+    }
+
+    @Scheduled(fixedDelay = 60 * 1000)
+    void processHeavyweightJobs() {
+        log.trace("Processing pending heavyweight requests");
+        processJobs(adminJobQueueRepository.loadPendingSchedules(EnumSet.of(PROCESS_ASYNC_EXTENSIONS)));
+        log.trace("done processing pending heavyweight requests");
+    }
+
+    private void processJobs(List<AdminJobSchedule> jobsToProcess) {
+        jobsToProcess.stream()
             .map(this::processPendingRequest)
             .filter(p -> !p.getRight().isEmpty())
             .forEach(scheduleWithResults -> {
@@ -89,7 +101,6 @@ public class AdminJobManager {
                     adminJobQueueRepository.updateSchedule(schedule.getId(), EXECUTED, ZonedDateTime.now(clockProvider.getClock()), Map.of());
                 }
             });
-        log.trace("done processing pending requests");
     }
 
     @Scheduled(cron = "#{environment.acceptsProfiles('dev') ? '0 * * * * *' : '0 0 0 * * *'}")

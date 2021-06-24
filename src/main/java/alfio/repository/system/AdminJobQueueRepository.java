@@ -31,16 +31,17 @@ import java.util.Set;
 @QueryRepository
 public interface AdminJobQueueRepository {
 
-    @Query("select * from admin_job_queue where status = 'SCHEDULED' for update skip locked")
-    List<AdminJobSchedule> loadPendingSchedules();
+    @Query("select * from admin_job_queue where status = 'SCHEDULED' and job_name in (:jobNames) for update skip locked")
+    List<AdminJobSchedule> loadPendingSchedules(@Bind("jobNames") Set<JobName> jobNames);
 
     @Query("update admin_job_queue set status = :status, execution_ts = :executionDate, metadata = to_json(:metadata::json) where id = :id")
     int updateSchedule(@Bind("id") long id,
                        @Bind("status") AdminJobSchedule.Status status,
-                       @Bind("executionDate")ZonedDateTime executionDate,
+                       @Bind("executionDate") ZonedDateTime executionDate,
                        @Bind("metadata") @JSONData Map<String, Object> metadata);
 
-    @Query("insert into admin_job_queue(job_name, request_ts, metadata, status) values(:jobName, :requestTs, to_json(:metadata::json), 'SCHEDULED')")
+    @Query("insert into admin_job_queue(job_name, request_ts, metadata, status) values(:jobName, :requestTs, to_json(:metadata::json), 'SCHEDULED')" +
+           " on conflict (job_name, request_ts) do nothing")
     int schedule(@Bind("jobName") JobName jobName,
                  @Bind("requestTs") ZonedDateTime requestTimestamp,
                  @Bind("metadata") @JSONData Map<String, Object> metadata);

@@ -55,8 +55,6 @@ public class SandboxContextFactory extends ContextFactory {
         if (executionTime > 15*1000) {
             // More than 15 seconds from Context creation time:
             // it is time to stop the script.
-            // Throw Error instance to ensure that script will never
-            // get control back through catch or finally.
             throw new ExecutionTimeoutException("Script execution timeout.");
         }
     }
